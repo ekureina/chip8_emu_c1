@@ -12,6 +12,8 @@ int chip8_init( void );
 int chip8_load_rom(const char* rom_name);
 int chip8_end( void );
 
-int perform_instruction( void );
+int chip8_perform_instruction( void );
+
+void chip8_coredump( void );
 
 #endif

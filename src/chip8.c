@@ -104,8 +104,17 @@ static int next_instruction( void ) {
     prog_c += 2;
 }
 
-int perform_instruction( void ) {
-    chip8_opcode_s opcode =  memory[prog_c];
+int chip8_perform_instruction( void ) {
+    chip8_opcode_s opcode =  memory[prog_c] << sizeof(chip8_memorycell_s) | memory[prog_c+1];
     errno = EINVAL;
     return -1;
+}
+
+void chip8_coredump( void ) {
+    fprintf(stderr, "I = 0x%X\n", index);
+    fprintf(stderr, "PC = 0x%X\n", prog_c);
+    uint16_t counter;
+    for (counter = 0; counter < REGISTER_NUM; ++counter) {
+        fprintf(stderr, "V%X = 0x%X\n", counter, registers[counter]);
+    }
 }
