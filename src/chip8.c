@@ -1,6 +1,8 @@
 #include <errno.h>
 #include <stdio.h>
 #include <limits.h>
+#include <stdlib.h>
+#include <time.h>
 #include "chip8.h"
 #include "graphics.h"
 
@@ -53,6 +55,7 @@ int chip8_init( void ) {
     clear_memory();
     clear_graphics_memory();
     clear_stack();    
+    srandom(time(NULL));
     return 0;
 }
 
@@ -186,6 +189,55 @@ static int perform_base_ops(chip8_opcode_s opcode) {
     return -1; // Never Reached
 }
 
+static int perform_f_opcodes(chip8_opcode_s opcode) {
+    switch (opcode & 0x00FF) {
+        case (0x001E):
+        {
+            chip8_register_s val_x;
+            if (get_register((opcode & 0x0F00) >> 8, &val_x) == -1) {
+                errno = EINVAL;
+                return -1;
+            }
+            index += val_x;
+            registers[REGISTER_NUM-1] = (index & 0x1000) >> 12;
+            index &= 0xFFF;
+        }
+        case (0x0033):
+        {
+            chip8_register_s val_x;
+            if (get_register((opcode & 0x0F00) >> 8, &val_x) == -1) {
+                errno = EINVAL;
+                return -1;
+            }
+            memory[index] = val_x / 100;
+            memory[index+1] = (val_x % 100) / 10;
+            memory[index+2] = val_x % 10;
+            break;
+        }
+        case (0x0055):
+        case (0x0065):
+        {
+            uint8_t reg_cap = (opcode & 0x0F00) >> 8;
+            if (reg_cap >= REGISTER_NUM) {
+                errno = EINVAL;
+                return -1;
+            }
+            chip8_memory_ptr_s track;
+            for (track = 0; track < reg_cap; ++track) {
+                if (opcode & 0x00FF == 0x0055) {
+                    memory[index+track] = registers[track];
+                } else {
+                    registers[track] = memory[index+track];
+                }
+            }
+        }
+        default:
+            errno = ENOSYS;
+            return -1;
+    }
+    return 0;
+}
+
 int chip8_perform_instruction( void ) {
     if (prog_c >= MEMORY_SIZE) {
         errno = EINVAL;
@@ -272,13 +324,33 @@ int chip8_perform_instruction( void ) {
             }
             chip8_register_s val_x;
             chip8_register_s val_y;
-            if (get_register(opcode & 0x0F00 >> 8, &val_x) == -1)
+            if (get_register((opcode & 0x0F00) >> 8, &val_x) == -1)
                 return -1;
-            if (get_register(opcode & 0x00F0 >> 4, &val_y) == -1)
+            if (get_register((opcode & 0x00F0) >> 4, &val_y) == -1)
                 return -1;
             if (val_x != val_y)
                 next_instruction();
             break;
+        }
+        case (0xA000):
+        {
+            index = opcode & 0x0FFF;
+            break;
+        }
+        case (0xB000):
+        {
+            chip8_register_s reg_0_val;
+            // No need to error check this read, is valid
+            get_register(0, &reg_0_val);
+            return jump_to(prog_c+reg_0_val);
+        }
+        case (0xC000):
+        {
+            return set_register((opcode & 0x0F00) >> 8, random() % (opcode & 0x00FF));
+        }
+        case (0xF000):
+        {
+            return perform_f_opcodes(opcode);
         }
         default:
         {
