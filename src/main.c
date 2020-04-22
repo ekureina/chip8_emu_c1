@@ -24,8 +24,8 @@ int main(int argc, char *argv[]) {
     }
     chip8_end();
     if (errno) {
-#ifdef DEBUG
         fprintf(stderr, "ERROR: %d\n", errno);
+#ifdef DEBUG
     }
     {
 #endif
