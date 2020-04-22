@@ -21,9 +21,13 @@ int main(int argc, char *argv[]) {
 #endif
     }
     chip8_end();
-#ifndef DEBUG
-    if (errno)
+    if (errno) {
+#ifdef DEBUG
+        fprintf(stderr, "ERROR: %d\n", errno);
+    }
+    {
 #endif
         chip8_coredump();
+    }
     return 0;
 }

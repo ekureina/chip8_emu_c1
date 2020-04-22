@@ -242,6 +242,12 @@ static int perform_f_opcodes(chip8_opcode_s opcode) {
         {
             return set_register((opcode & 0x0F00) >> 8, delay_timer);
         }
+        case (0x000A):
+        {
+            int key;
+            while ((key = get_key_blocking()) == -1);
+            return set_register((opcode & 0x0F00) >> 8, key);
+        }
         case (0x0015):
         case (0x0018):
         case (0x001E):
@@ -328,19 +334,13 @@ int chip8_perform_instruction( void ) {
         }
         case (0x3000): // Skip if equal
         {
-            chip8_register_s cmp_val;
-            if (get_register(opcode & 0x0F00 >> 8, &cmp_val) == -1)
-                return -1;
-            if (cmp_val == (opcode & 0x00FF))
+            if (registers[(opcode & 0x0F00) >> 8] == (opcode & 0x00FF))
                 next_instruction();
             break;
         }
         case (0x4000): // Skip if not equal
         {
-            chip8_register_s cmp_val;
-            if (get_register(opcode & 0x0F00 >> 8, &cmp_val) == -1)
-                return -1;
-            if (cmp_val != (opcode & 0x00FF))
+            if (registers[(opcode & 0x0F00) >> 8] != (opcode & 0x00FF))
                 next_instruction();
             break;
         }
@@ -362,10 +362,7 @@ int chip8_perform_instruction( void ) {
         }
         case (0x6000): // SetReg
         {
-            uint8_t reg_number = (uint8_t) ((opcode & 0x0F00) >> 8);
-            chip8_register_s set_num= opcode & 0x00FF;
-            if (set_register(reg_number, set_num) == -1)
-                return -1;
+            registers[(opcode & 0x0F00) >> 8] = opcode & 0x00FF;
             break;
         }
         case (0x7000): // AddReg
