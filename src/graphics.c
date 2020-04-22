@@ -4,21 +4,21 @@
 #define g_end
 #define g_clear
 #define g_noise printf("\a");
+#define ASCII_FILL '#'
 #else
 #include <ncurses.h>
 #define g_init initscr();\
     noecho();\
     keypad(stdscr, TRUE);\
-    curs_set();\
+    curs_set(0);\
     cbreak();
 #define g_end endwin();
 #define g_clear refresh();
 #define g_noise beep();
+#define ASCII_FILL '\xDB'
 #endif
 #include <errno.h>
 #include "graphics.h"
-
-#define ASCII_FILL '#'
 
 void graphics_init( void ) {
     g_init
