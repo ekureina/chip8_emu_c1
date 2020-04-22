@@ -5,6 +5,7 @@
 #define g_clear
 #define g_noise printf("\a");
 #define g_get_key(key) key = getchar()
+#define g_get_key_nb(key) fread(&key, sizeof(char), 1, stdin)
 #define ASCII_FILL '#'
 #else
 #include <ncurses.h>
@@ -16,6 +17,9 @@
 #define g_clear refresh();
 #define g_noise beep();
 #define g_get_key(key) key = getch()
+#define g_get_key_nb(key) nodelay(stdscr, TRUE);\
+    key = getch();\
+    nodelay(stdscr, FALSE)
 #define ASCII_FILL '\xDB'
 #endif
 #include <errno.h>
@@ -65,10 +69,24 @@ void emit_noise( void ) {
     g_noise
 }
 
-int8_t get_key_blocking() {
+int8_t get_key_blocking( void ) {
     static char* key_array = "q&[{;,.aoe'j}puk";
     int out;
     g_get_key(out);
+    char* key_search = key_array;
+    while (*key_search != out) {
+        ++key_search;
+        if (!*key_search) {
+            return -1;
+        }
+    }
+    return key_search-key_array;
+}
+
+int8_t get_key( void ) {
+    static char* key_array = "q&[{;,.aoe'j}puk";
+    int out;
+    g_get_key_nb(out);
     char* key_search = key_array;
     while (*key_search != out) {
         ++key_search;

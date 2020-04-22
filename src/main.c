@@ -1,6 +1,8 @@
 #include <stdio.h>
-#include "chip8.h"
 #include <errno.h>
+#include <stdint.h>
+#include "chip8.h"
+#include "graphics.h"
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {

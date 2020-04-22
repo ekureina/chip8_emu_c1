@@ -448,8 +448,22 @@ int chip8_perform_instruction( void ) {
         }
         case (0xE000):
         {
-            errno = ENOSYS;
-            return -1;
+            if (!((opcode & 0x00FF) == 0x009E ||
+                (opcode & 0x00FF) == 0x00A1)) {
+                errno = ENOSYS;
+                return -1;
+            }
+            chip8_register_s val_x = registers[(opcode & 0x0F00) >> 8];
+            if (val_x > 16) {
+                errno = EINVAL;
+                return -1;
+            }
+            int8_t key_status = get_key();
+            if (((key_status == val_x) && (opcode & 0x00FF) == 0x009E) ||
+                (key_status != val_x)) {
+                next_instruction();
+            }
+            break;
         }
         case (0xF000):
         {
