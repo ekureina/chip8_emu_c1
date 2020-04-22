@@ -124,9 +124,10 @@ static int perform_two_reg(chip8_opcode_s opcode) {
         chip8_register_s y_val;
         if (get_register(reg_x_number, &x_val) == -1)
             return -1;
-        if (get_register(reg_y_number, &y_val) == -1)
+        if (!((opcode & 0x000F) == 6 || (opcode & 0x000F) == 0xE) &&
+            get_register(reg_y_number, &y_val) == -1)
             return -1;
-        switch (opcode & 0x00F) {
+        switch (opcode & 0x000F) {
             case (0x0001):
             {
                 return set_register(reg_x_number, x_val | y_val);
@@ -141,22 +142,27 @@ static int perform_two_reg(chip8_opcode_s opcode) {
             }
             case (0x0004):
             {
+                set_register(REGISTER_NUM-1, ((x_val+(int)y_val) & 0x100) >> 8);
                 return set_register(reg_x_number, x_val + y_val);
             }
             case (0x0005):
             {
+                set_register(REGISTER_NUM-1, x_val < y_val ? 1 : 0);
                 return set_register(reg_x_number, x_val - y_val);
             }
             case (0x0006):
             {
+                set_register(REGISTER_NUM-1, x_val & 1);
                 return set_register(reg_x_number, x_val >> 1);
             }
             case (0x0007):
             {
+                set_register(REGISTER_NUM-1, y_val < x_val ? 1 : 0);
                 return set_register(reg_x_number, y_val - x_val);
             }
             case (0x000E):
             {
+                set_register(REGISTER_NUM-1, (x_val & 0x80) >> 7);
                 return set_register(reg_x_number, x_val << 1);
             }
             default:
