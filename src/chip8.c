@@ -13,7 +13,6 @@
 #define GFX_WIDTH 64
 #define GFX_HEIGHT 32
 #define STACK_HEIGHT 16
-#define ASCII_FILL 234
 
 static chip8_register_s registers[REGISTER_NUM];
 static chip8_memory_ptr_s prog_c;
@@ -22,8 +21,11 @@ static chip8_memory_ptr_s index;
 static chip8_stack_s stack[STACK_SIZE];
 static chip8_register_s stack_p;
 
-static chip8_memorycell_s graphics_memory[GFX_WIDTH*GFX_HEIGHT];
+static chip8_memorycell_s graphics_memory[GFX_WIDTH][GFX_HEIGHT];
 static chip8_memorycell_s memory[MEMORY_SIZE];
+
+static chip8_register_s delay_timer;
+static chip8_register_s sound_timer;
 
 static void clear_stack( void ) {
     for (stack_p = 0; stack_p < STACK_SIZE; ++stack_p) {
@@ -38,13 +40,20 @@ static void clear_memory( void ) {
     index = 0;
 }
 static void clear_graphics_memory( void ) {
-    chip8_memory_ptr_s graphics_memory_p;
+    chip8_memory_ptr_s graphics_memory_w_p;
     for (
-        graphics_memory_p = 0;
-        graphics_memory_p < GFX_WIDTH*GFX_HEIGHT;
-        ++graphics_memory_p
+        graphics_memory_w_p = 0;
+        graphics_memory_w_p < GFX_WIDTH;
+        ++graphics_memory_w_p
     ) {
-        graphics_memory[graphics_memory_p] = 0;
+        chip8_memory_ptr_s graphics_memory_h_p;
+        for (
+            graphics_memory_h_p = 0;
+            graphics_memory_h_p < GFX_HEIGHT;
+            ++graphics_memory_h_p
+        ) {
+            graphics_memory[graphics_memory_w_p][graphics_memory_h_p] = 0;
+        }
     }
     clear_screen();
 }
@@ -197,17 +206,14 @@ static int perform_base_ops(chip8_opcode_s opcode) {
 
 static int perform_f_opcodes(chip8_opcode_s opcode) {
     switch (opcode & 0x00FF) {
-        case (0x001E):
+        case (0x0007):
         {
-            chip8_register_s val_x;
-            if (get_register((opcode & 0x0F00) >> 8, &val_x) == -1) {
-                errno = EINVAL;
-                return -1;
-            }
-            index += val_x;
-            registers[REGISTER_NUM-1] = (index & 0x1000) >> 12;
-            index &= 0xFFF;
+            return set_register((opcode & 0x0F00) >> 8, delay_timer);
         }
+        case (0x0015):
+        case (0x0018):
+        case (0x001E):
+        case (0x0029):
         case (0x0033):
         {
             chip8_register_s val_x;
@@ -215,9 +221,22 @@ static int perform_f_opcodes(chip8_opcode_s opcode) {
                 errno = EINVAL;
                 return -1;
             }
-            memory[index] = val_x / 100;
-            memory[index+1] = (val_x % 100) / 10;
-            memory[index+2] = val_x % 10;
+            if ((opcode & 0x0030) == 0x0010) {
+                if (opcode & 0x0002) {
+                    index += val_x;
+                    set_register(REGISTER_NUM-1, (index & 0x1000) >> 12);
+                    index &= 0xFFF;
+                } else if (opcode & 0x0008) {
+                    sound_timer = val_x;
+                } else {
+                    delay_timer = val_x; 
+                }
+            } else if (opcode & 0x0010) {
+                memory[index] = val_x / 100;
+                memory[index+1] = (val_x % 100) / 10;
+                memory[index+2] = val_x % 10;
+            } else {
+            }
             break;
         }
         case (0x0055):
@@ -229,11 +248,12 @@ static int perform_f_opcodes(chip8_opcode_s opcode) {
                 return -1;
             }
             chip8_memory_ptr_s track;
-            for (track = 0; track < reg_cap; ++track) {
-                if (opcode & 0x00FF == 0x0055) {
-                    memory[index+track] = registers[track];
+            for (track = 0; track < ((opcode & 0x0010) >> 4) * 2 * reg_cap; ++track) {
+                if ((opcode & 0x00FF) == 0x0055) {
+                    get_register(track, memory+index+track);
+                    ++track;
                 } else {
-                    registers[track] = memory[index+track];
+                    set_register(track, memory[index+track]);
                 }
             }
         }
@@ -354,6 +374,37 @@ int chip8_perform_instruction( void ) {
         {
             return set_register((opcode & 0x0F00) >> 8, random() % (opcode & 0x00FF));
         }
+        case (0xD000):
+        {
+            chip8_register_s val_x;
+            chip8_register_s val_y;
+            chip8_register_s overflow_val = 0;
+            if (get_register((opcode & 0x0F00) >> 8, &val_x) == -1)
+                return -1;
+            if (get_register((opcode & 0x00F0) >> 4, &val_y) == -1)
+                return -1;
+            uint8_t w_count, h_count;
+            uint8_t h_count_max = opcode & 0x000F;
+            if (val_x+CHAR_BIT >= GFX_WIDTH || val_y+h_count_max >= GFX_HEIGHT) {
+                errno = EINVAL;
+                return -1;
+            }
+            for (h_count = 0; h_count < h_count_max; ++h_count) {
+                chip8_memorycell_s row = memory[index+h_count];
+                for (w_count = 0; w_count < CHAR_BIT; ++w_count) {
+                    chip8_memorycell_s draw_mask = (row >> (7 - w_count)) & 1;
+                    overflow_val |= draw_mask & graphics_memory[val_x+w_count][val_y+h_count];
+                    graphics_memory[val_x+w_count][val_y+h_count] ^= draw_mask;
+                }
+            }
+            set_register(REGISTER_NUM-1, overflow_val);
+            draw_screen((uint8_t*) graphics_memory, GFX_WIDTH, GFX_HEIGHT);
+        }
+        case (0xE000):
+        {
+            errno = ENOSYS;
+            return -1;
+        }
         case (0xF000):
         {
             return perform_f_opcodes(opcode);
@@ -362,6 +413,15 @@ int chip8_perform_instruction( void ) {
         {
             errno = ENOSYS;
             return -1;
+        }
+    }
+    if (delay_timer > 0) {
+        --delay_timer;
+    }
+    if (sound_timer > 0) {
+        --sound_timer;
+        if (!sound_timer) {
+            emit_noise();
         }
     }
     return 0;

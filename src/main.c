@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "chip8.h"
+#include <errno.h>
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -7,6 +8,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
     const char *rom_name = argv[1];
+    errno = 0;
     chip8_init();
     chip8_load_rom(rom_name);
     int perform_status;
@@ -19,6 +21,9 @@ int main(int argc, char *argv[]) {
 #endif
     }
     chip8_end();
-    chip8_coredump();
+#ifndef DEBUG
+    if (errno)
+#endif
+        chip8_coredump();
     return 0;
 }
