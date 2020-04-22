@@ -199,6 +199,52 @@ int chip8_perform_instruction( void ) {
             perform_base_ops(opcode);
             break;
         }
+        case (0x1000): // Unconditional Jump
+        {
+            return jump_to(opcode & 0x0FFF);
+        }
+        case (0x2000): // Call Subroutine
+        {
+            if (stack_p == STACK_SIZE) {
+                errno = ENOMEM;
+                return -1;
+            }
+            stack[stack_p++] = opcode & 0x0FFF;
+        }
+        case (0x3000): // Skip if equal
+        {
+            chip8_register_s cmp_val;
+            if (get_register(opcode & 0x0F00 >> 8, &cmp_val) == -1)
+                return -1;
+            if (cmp_val == (opcode & 0x00FF))
+                next_instruction();
+            break;
+        }
+        case (0x4000): // Skip if not equal
+        {
+            chip8_register_s cmp_val;
+            if (get_register(opcode & 0x0F00 >> 8, &cmp_val) == -1)
+                return -1;
+            if (cmp_val != (opcode & 0x00FF))
+                next_instruction();
+            break;
+        }
+        case (0x5000): // Skip if register vals equal
+        {
+            if (opcode & 0x000F) {
+                errno = EINVAL;
+                return -1;
+            }
+            chip8_register_s val_x;
+            chip8_register_s val_y;
+            if (get_register(opcode & 0x0F00 >> 8, &val_x) == -1)
+                return -1;
+            if (get_register(opcode & 0x00F0 >> 4, &val_y) == -1)
+                return -1;
+            if (val_x == val_y)
+                next_instruction();
+            break;
+        }
         case (0x6000): // SetReg
         {
             uint8_t reg_number = (uint8_t) ((opcode & 0x0F00) >> 8);
@@ -217,6 +263,22 @@ int chip8_perform_instruction( void ) {
         case (0x8000): // Two reg opcodes
         {
             perform_two_reg(opcode);
+        }
+        case (0x9000): // Skip if register vals unequal
+        {
+            if (opcode & 0x000F) {
+                errno = EINVAL;
+                return -1;
+            }
+            chip8_register_s val_x;
+            chip8_register_s val_y;
+            if (get_register(opcode & 0x0F00 >> 8, &val_x) == -1)
+                return -1;
+            if (get_register(opcode & 0x00F0 >> 4, &val_y) == -1)
+                return -1;
+            if (val_x != val_y)
+                next_instruction();
+            break;
         }
         default:
         {
