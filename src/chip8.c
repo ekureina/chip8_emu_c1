@@ -13,6 +13,9 @@
 #define GFX_WIDTH 64
 #define GFX_HEIGHT 32
 #define STACK_HEIGHT 16
+#define FONT_START 0x50
+#define FONT_WIDTH 5
+#define FONT_CHARLEN 16
 
 static chip8_register_s registers[REGISTER_NUM];
 static chip8_memory_ptr_s prog_c;
@@ -24,8 +27,35 @@ static chip8_register_s stack_p;
 static chip8_memorycell_s graphics_memory[GFX_WIDTH][GFX_HEIGHT];
 static chip8_memorycell_s memory[MEMORY_SIZE];
 
+static chip8_memorycell_s fontset[FONT_WIDTH*FONT_CHARLEN] =
+{
+  0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+  0x20, 0x60, 0x20, 0x20, 0x70, // 1
+  0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+  0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+  0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+  0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+  0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+  0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+  0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+  0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+  0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+  0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+  0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+  0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+  0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+  0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+};
+
 static chip8_register_s delay_timer;
 static chip8_register_s sound_timer;
+
+static void load_font( void ) {
+    uint8_t count;
+    for (count = 0; count < FONT_WIDTH*FONT_CHARLEN; ++count) {
+       memory[count+FONT_START] = fontset[count];
+    }
+}
 
 static void clear_stack( void ) {
     for (stack_p = 0; stack_p < STACK_SIZE; ++stack_p) {
@@ -62,6 +92,7 @@ int chip8_init( void ) {
     graphics_init();
     prog_c = PROG_C_START;
     clear_memory();
+    load_font();
     clear_graphics_memory();
     clear_stack();    
     srandom(time(NULL));
@@ -197,11 +228,12 @@ static int perform_base_ops(chip8_opcode_s opcode) {
         {
             return jump_to((chip8_memory_ptr_s) stack[--stack_p]);
         }
+        case (0x00FE): // Emulator specific termination instr
+            break;
         default:
             errno = ENOSYS;
-            return -1;
     }
-    return -1; // Never Reached
+    return -1;
 }
 
 static int perform_f_opcodes(chip8_opcode_s opcode) {
@@ -236,6 +268,7 @@ static int perform_f_opcodes(chip8_opcode_s opcode) {
                 memory[index+1] = (val_x % 100) / 10;
                 memory[index+2] = val_x % 10;
             } else {
+                index = (val_x*FONT_WIDTH) + FONT_START;
             }
             break;
         }
@@ -274,12 +307,15 @@ int chip8_perform_instruction( void ) {
     switch (opcode & 0xF000) {
         case (0x0000):
         {
-            perform_base_ops(opcode);
+            if (perform_base_ops(opcode) == -1)
+                return -1;
             break;
         }
         case (0x1000): // Unconditional Jump
         {
-            return jump_to(opcode & 0x0FFF);
+            if (jump_to(opcode & 0x0FFF) == -1)
+                return -1;
+            break;
         }
         case (0x2000): // Call Subroutine
         {
@@ -288,6 +324,7 @@ int chip8_perform_instruction( void ) {
                 return -1;
             }
             stack[stack_p++] = opcode & 0x0FFF;
+            break;
         }
         case (0x3000): // Skip if equal
         {
@@ -327,7 +364,9 @@ int chip8_perform_instruction( void ) {
         {
             uint8_t reg_number = (uint8_t) ((opcode & 0x0F00) >> 8);
             chip8_register_s set_num= opcode & 0x00FF;
-            return set_register(reg_number, set_num);
+            if (set_register(reg_number, set_num) == -1)
+                return -1;
+            break;
         }
         case (0x7000): // AddReg
         {
@@ -336,7 +375,9 @@ int chip8_perform_instruction( void ) {
             if (get_register(reg_number, &new_val) == -1)
                 return -1;
             new_val += opcode & 0x00FF;
-            return set_register(reg_number, new_val);
+            if (set_register(reg_number, new_val) == -1)
+                return -1;
+            break;
         }
         case (0x8000): // Two reg opcodes
         {
@@ -368,11 +409,15 @@ int chip8_perform_instruction( void ) {
             chip8_register_s reg_0_val;
             // No need to error check this read, is valid
             get_register(0, &reg_0_val);
-            return jump_to(prog_c+reg_0_val);
+            if (jump_to(prog_c+reg_0_val) == -1)
+                return -1;
+            break;
         }
         case (0xC000):
         {
-            return set_register((opcode & 0x0F00) >> 8, random() % (opcode & 0x00FF));
+            if (set_register((opcode & 0x0F01) >> 8, random() % (opcode & 0x00FF)) == -1)
+                return -1;
+            break;
         }
         case (0xD000):
         {
@@ -391,14 +436,18 @@ int chip8_perform_instruction( void ) {
             }
             for (h_count = 0; h_count < h_count_max; ++h_count) {
                 chip8_memorycell_s row = memory[index+h_count];
+                //printf("%d %d\n", h_count, row);
                 for (w_count = 0; w_count < CHAR_BIT; ++w_count) {
                     chip8_memorycell_s draw_mask = (row >> (7 - w_count)) & 1;
+                    //printf("%d", draw_mask);
                     overflow_val |= draw_mask & graphics_memory[val_x+w_count][val_y+h_count];
                     graphics_memory[val_x+w_count][val_y+h_count] ^= draw_mask;
                 }
             }
             set_register(REGISTER_NUM-1, overflow_val);
-            draw_screen((uint8_t*) graphics_memory, GFX_WIDTH, GFX_HEIGHT);
+            if (draw_screen(graphics_memory, GFX_WIDTH, GFX_HEIGHT) == -1)
+                return -1;
+            break;
         }
         case (0xE000):
         {
@@ -407,7 +456,9 @@ int chip8_perform_instruction( void ) {
         }
         case (0xF000):
         {
-            return perform_f_opcodes(opcode);
+            if (perform_f_opcodes(opcode) == -1)
+                return -1;
+            break;
         }
         default:
         {
@@ -435,7 +486,7 @@ void chip8_coredump( void ) {
         fprintf(stderr, "V%X = 0x%02X\n", counter, registers[counter]);
     }
     fprintf(stderr, "MEMORY:\n");
-    for (counter = PROG_C_START; counter >= MEMORY_SIZE || !memory[counter]; counter+=8) {
+    for (counter = PROG_C_START; counter >= MEMORY_SIZE || !(memory[counter] << 8 | memory[counter+1]); counter+=8) {
         fprintf(stderr, "0x%04X: %02X %02X %02X %02X %02X %02X %02X %02X\n",
                 counter, memory[counter], memory[counter+1],
                 memory[counter+2], memory[counter+3], memory[counter+4],
