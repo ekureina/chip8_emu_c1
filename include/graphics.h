@@ -4,5 +4,6 @@
 void graphics_init( void );
 void graphics_end( void );
 int draw_screen( );
+int clear_screen( void );
 
 #endif

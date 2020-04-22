@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <stdio.h>
+#include <limits.h>
 #include "chip8.h"
 #include "graphics.h"
 
@@ -43,6 +44,7 @@ static void clear_graphics_memory( void ) {
     ) {
         graphics_memory[graphics_memory_p] = 0;
     }
+    clear_screen();
 }
 
 int chip8_init( void ) {
@@ -51,18 +53,20 @@ int chip8_init( void ) {
     clear_memory();
     clear_graphics_memory();
     clear_stack();    
+    return 0;
 }
 
 int chip8_load_rom(const char* rom_name) {
     FILE* rom_handle = fopen(rom_name, "rb");
     if (!rom_handle) return -1;
-    fread((void*) memory+PROG_C_START, sizeof(memory[0]), sizeof(memory)/sizeof(memory[0])-PROG_C_START, rom_handle);
+    fread((void*) (memory+PROG_C_START), sizeof(memory[0]), sizeof(memory)/sizeof(memory[0])-PROG_C_START, rom_handle);
     if (ferror(rom_handle)) return -1;
     if (fclose(rom_handle)) return -1;
     return 0;
 }
 int chip8_end( void ) {
     graphics_end();
+    return 0;
 }
 
 static int get_register(uint8_t register_number, chip8_register_s *reg_val) {
@@ -84,12 +88,13 @@ static int set_register(uint8_t register_number, chip8_register_s reg_val) {
     return 0;
 }
 
-static int copy_register(uint8_t register_number_A, uint8_t register_number_B) {
-    if (register_number_A >= REGISTER_NUM || register_number_B >= REGISTER_NUM) {
+static int copy_register(uint8_t register_number_x, uint8_t register_number_y) {
+    if (register_number_x >= REGISTER_NUM || register_number_y >= REGISTER_NUM) {
         errno = EINVAL;
         return -1;
     }
-    registers[register_number_A] = registers[register_number_B];
+    registers[register_number_x] = registers[register_number_y];
+    return 0;
 }
 
 static int jump_to(chip8_memory_ptr_s location) {
@@ -98,23 +103,142 @@ static int jump_to(chip8_memory_ptr_s location) {
         return -1;
     }
     prog_c = location;
+    return 0;
 }
 
-static int next_instruction( void ) {
+static void next_instruction( void ) {
     prog_c += 2;
 }
 
+static int perform_two_reg(chip8_opcode_s opcode) {
+    uint8_t reg_x_number = (uint8_t) ((opcode & 0x0F00) >> 8);
+    uint8_t reg_y_number = (uint8_t) ((opcode & 0x00F0) >> 4);
+    if (!(opcode & 0x000F)) {
+        return copy_register(reg_x_number, reg_y_number);
+    }
+    else {
+        chip8_register_s x_val;
+        chip8_register_s y_val;
+        if (get_register(reg_x_number, &x_val) == -1)
+            return -1;
+        if (get_register(reg_y_number, &y_val) == -1)
+            return -1;
+        switch (opcode & 0x00F) {
+            case (0x0001):
+            {
+                return set_register(reg_x_number, x_val | y_val);
+            }
+            case (0x0002):
+            {
+                return set_register(reg_x_number, x_val & y_val);
+            }
+            case (0x0003):
+            {
+                return set_register(reg_x_number, x_val ^ y_val);
+            }
+            case (0x0004):
+            {
+                return set_register(reg_x_number, x_val + y_val);
+            }
+            case (0x0005):
+            {
+                return set_register(reg_x_number, x_val - y_val);
+            }
+            case (0x0006):
+            {
+                return set_register(reg_x_number, x_val >> 1);
+            }
+            case (0x0007):
+            {
+                return set_register(reg_x_number, y_val - x_val);
+            }
+            case (0x000E):
+            {
+                return set_register(reg_x_number, x_val << 1);
+            }
+            default:
+                errno = EINVAL;
+                return -1;
+        }
+    }
+    return -1; // Never Reached
+}
+
+static int perform_base_ops(chip8_opcode_s opcode) {
+    switch (opcode & 0x00FF) {
+        case (0x00E0): // Clr Screen
+        {
+            clear_graphics_memory();
+            return 0;
+        }
+        case (0X0000): // NOOP
+        {
+            return 0;
+        }
+        case (0x00EE): // Return from subroutine
+        {
+            return jump_to((chip8_memory_ptr_s) stack[--stack_p]);
+        }
+        default:
+            errno = ENOSYS;
+            return -1;
+    }
+    return -1; // Never Reached
+}
+
 int chip8_perform_instruction( void ) {
-    chip8_opcode_s opcode =  memory[prog_c] << sizeof(chip8_memorycell_s) | memory[prog_c+1];
-    errno = EINVAL;
-    return -1;
+    if (prog_c >= MEMORY_SIZE) {
+        errno = EINVAL;
+        return -1;
+    }
+    chip8_opcode_s opcode =  (memory[prog_c] << sizeof(chip8_memorycell_s)*CHAR_BIT) | memory[prog_c+1];
+    next_instruction();
+    switch (opcode & 0xF000) {
+        case (0x0000):
+        {
+            perform_base_ops(opcode);
+            break;
+        }
+        case (0x6000): // SetReg
+        {
+            uint8_t reg_number = (uint8_t) ((opcode & 0x0F00) >> 8);
+            chip8_register_s set_num= opcode & 0x00FF;
+            return set_register(reg_number, set_num);
+        }
+        case (0x7000): // AddReg
+        {
+            uint8_t reg_number = (uint8_t) ((opcode & 0x0F00) >> 8);
+            chip8_register_s new_val;
+            if (get_register(reg_number, &new_val) == -1)
+                return -1;
+            new_val += opcode & 0x00FF;
+            return set_register(reg_number, new_val);
+        }
+        case (0x8000): // Two reg opcodes
+        {
+            perform_two_reg(opcode);
+        }
+        default:
+        {
+            errno = ENOSYS;
+            return -1;
+        }
+    }
+    return 0;
 }
 
 void chip8_coredump( void ) {
-    fprintf(stderr, "I = 0x%X\n", index);
-    fprintf(stderr, "PC = 0x%X\n", prog_c);
+    fprintf(stderr, "I = 0x%04X\n", index);
+    fprintf(stderr, "PC = 0x%04X\n", prog_c);
     uint16_t counter;
     for (counter = 0; counter < REGISTER_NUM; ++counter) {
-        fprintf(stderr, "V%X = 0x%X\n", counter, registers[counter]);
+        fprintf(stderr, "V%X = 0x%02X\n", counter, registers[counter]);
+    }
+    fprintf(stderr, "MEMORY:\n");
+    for (counter = PROG_C_START; counter >= MEMORY_SIZE || !memory[counter]; counter+=8) {
+        fprintf(stderr, "0x%04X: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                counter, memory[counter], memory[counter+1],
+                memory[counter+2], memory[counter+3], memory[counter+4],
+                memory[counter+5], memory[counter+6], memory[counter+7]);
     }
 }
