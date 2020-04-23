@@ -3,7 +3,7 @@ CFLAGS:=-Wall -Wpedantic -Werror
 OUTPUT_DIRS:=bin/ obj/
 
 bin/chip8: obj/ obj/chip8.o obj/main.o obj/graphics.o bin/
-	$(COMPILER) -o bin/chip8 obj/chip8.o obj/main.o obj/graphics.o -lncurses
+	$(COMPILER) $(CFLAGS) -o bin/chip8 obj/chip8.o obj/main.o obj/graphics.o -lncurses
 
 obj/:
 	mkdir -p obj
@@ -16,7 +16,8 @@ obj/%.o: src/%.c
 	$(COMPILER) $(CFLAGS) -o $@ -c $<
 
 debug: CFLAGS+=-DDEBUG
-debug: bin/chip8
+debug: obj/ obj/chip8.o obj/main.o obj/graphics.o bin/
+	$(COMPILER) $(CFLAGS) -o bin/chip8 obj/chip8.o obj/main.o obj/graphics.o
 
 clean:
 	rm -rf $(OUTPUT_DIRS)

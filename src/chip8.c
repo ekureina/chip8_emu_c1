@@ -102,7 +102,10 @@ int chip8_init( void ) {
 int chip8_load_rom(const char* rom_name) {
     FILE* rom_handle = fopen(rom_name, "rb");
     if (!rom_handle) return -1;
-    fread((void*) (memory+PROG_C_START), sizeof(memory[0]), sizeof(memory)/sizeof(memory[0])-PROG_C_START, rom_handle);
+    if (fread((void*) (memory+PROG_C_START), sizeof(memory[0]), sizeof(memory)/sizeof(memory[0])-PROG_C_START, rom_handle) == 0) {
+        if (!errno)
+            return -1;
+    }
     if (ferror(rom_handle)) return -1;
     if (fclose(rom_handle)) return -1;
     return 0;
